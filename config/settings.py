@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -20,12 +21,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-ae-so6y94tx6wir-^w*phojv648@(ocby($bve+@x*rdrw)266'
+SECRET_KEY = os.environ.get(
+    "DJANGO_SECRET_KEY",
+    "django-insecure-development-only-change-me",
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if host.strip()
+]
 
 
 # Application definition
@@ -37,6 +45,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'users.apps.UsersConfig',
+    'subscriptions.apps.SubscriptionsConfig',
+    'integrations.market_data.apps.MarketDataConfig',
+    'integrations.brokerage.apps.BrokerageConfig',
+    'portfolios.apps.PortfoliosConfig',
 ]
 
 MIDDLEWARE = [
@@ -79,6 +92,63 @@ DATABASES = {
     }
 }
 
+AUTH_USER_MODEL = "users.User"
+
+
+# External data integrations
+
+REDIS_URL = os.environ.get("REDIS_URL", "")
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "tracking-app-default",
+    },
+    "market_data": (
+        {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": REDIS_URL,
+            "KEY_PREFIX": "tracking-app",
+            "TIMEOUT": 300,
+            "OPTIONS": {
+                "socket_connect_timeout": int(os.environ.get("REDIS_CONNECT_TIMEOUT", "2")),
+                "socket_timeout": int(os.environ.get("REDIS_SOCKET_TIMEOUT", "2")),
+            },
+        }
+        if REDIS_URL
+        else {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "tracking-app-market-data",
+        }
+    ),
+}
+
+MARKET_DATA = {
+    "FMP_API_KEY": os.environ.get("FMP_API_KEY", ""),
+    "FMP_BASE_URL": os.environ.get(
+        "FMP_BASE_URL", "https://financialmodelingprep.com/stable"
+    ),
+    "HTTP_TIMEOUT": int(os.environ.get("MARKET_DATA_HTTP_TIMEOUT", "10")),
+    "CACHE_ALIAS": "market_data",
+    "TTLS": {
+        "SEARCH": int(os.environ.get("MARKET_SEARCH_TTL", "300")),
+        "SEARCH_STALE": int(os.environ.get("MARKET_SEARCH_STALE_TTL", "86400")),
+        "QUOTE": int(os.environ.get("MARKET_QUOTE_TTL", "60")),
+        "QUOTE_STALE": int(os.environ.get("MARKET_QUOTE_STALE_TTL", "86400")),
+        "PROFILE": int(os.environ.get("MARKET_PROFILE_TTL", "86400")),
+        "PROFILE_STALE": int(os.environ.get("MARKET_PROFILE_STALE_TTL", "604800")),
+        "DIVIDENDS": int(os.environ.get("MARKET_DIVIDENDS_TTL", "21600")),
+        "DIVIDENDS_STALE": int(
+            os.environ.get("MARKET_DIVIDENDS_STALE_TTL", "604800")
+        ),
+        "NEGATIVE": int(os.environ.get("MARKET_NEGATIVE_TTL", "120")),
+    },
+}
+
+BROKERAGE = {
+    "SNAPTRADE_CLIENT_ID": os.environ.get("SNAPTRADE_CLIENT_ID", ""),
+    "SNAPTRADE_CONSUMER_KEY": os.environ.get("SNAPTRADE_CONSUMER_KEY", ""),
+}
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
@@ -115,13 +185,49 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 
-MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
-    },
-}
+EMAIL_BACKEND_PATH = os.environ.get(
+    "DJANGO_EMAIL_BACKEND",
+    (
+        "django.core.mail.backends.console.EmailBackend"
+        if DEBUG
+        else "django.core.mail.backends.smtp.EmailBackend"
+    ),
+)
+MAILERS = {"default": {"BACKEND": EMAIL_BACKEND_PATH}}
+if EMAIL_BACKEND_PATH == "django.core.mail.backends.smtp.EmailBackend":
+    MAILERS["default"]["OPTIONS"] = {
+        "host": os.environ.get("EMAIL_HOST", "localhost"),
+        "port": int(os.environ.get("EMAIL_PORT", "587")),
+        "username": os.environ.get("EMAIL_HOST_USER", ""),
+        "password": os.environ.get("EMAIL_HOST_PASSWORD", ""),
+        "use_tls": os.environ.get("EMAIL_USE_TLS", "true").lower() == "true",
+        "use_ssl": os.environ.get("EMAIL_USE_SSL", "false").lower() == "true",
+        "timeout": int(os.environ.get("EMAIL_TIMEOUT", "10")),
+    }
+
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@tracking-app.local")
+PASSWORD_RESET_CONFIRM_URL = os.environ.get(
+    "PASSWORD_RESET_CONFIRM_URL",
+    "http://localhost:3000/reset-password?uid={uid}&token={token}",
+)
+
+# Secure production defaults are enabled automatically when DEBUG is false.
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SAMESITE = "Lax"
+SECURE_SSL_REDIRECT = os.environ.get("DJANGO_SECURE_SSL_REDIRECT", str(not DEBUG)).lower() == "true"
+SECURE_HSTS_SECONDS = 31536000 if not DEBUG else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
+SECURE_HSTS_PRELOAD = not DEBUG
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = "DENY"

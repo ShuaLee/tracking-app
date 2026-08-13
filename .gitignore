@@ -8,11 +8,13 @@ venv/
 
 # Django
 db.sqlite3
+*.sqlite3.bak
 *.log
 
 # Environment variables / secrets
 .env
 .env.*
+!.env.example
 
 # IDE
 .vscode/
@@ -20,3 +22,6 @@ db.sqlite3
 
 # macOS
 .DS_Store
+
+# Collected static files
+staticfiles/

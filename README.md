@@ -1,8 +1,8 @@
 # Tracking App — Application Foundations
 
-This repository contains the complete Stage 1 identity/account domain, Stage 2 external-data foundation, and Stage 3 manual portfolio core. It provides secure identity, centralized entitlements, provider-neutral integrations, and permanent ownership models for arbitrary assets.
+This repository contains the complete Stage 1 identity/account domain, Stage 2 external-data foundation, Stage 3 manual portfolio core, and Stage 4 market-linked and brokerage-synced portfolio workflows. It provides secure identity, centralized entitlements, provider-neutral integrations, and permanent ownership models for arbitrary assets.
 
-Market-linked assets and brokerage reconciliation are intentionally deferred to Stage 4. Stage 3 manual ownership remains usable when every external provider and cache is offline.
+Manual ownership remains usable when every external provider and cache is offline. Stage 4 enriches that permanent data without making a provider the system of record.
 
 ## Local setup
 
@@ -57,6 +57,7 @@ Copy `.env.example` into your environment manager or configure the variables thr
 | `FMP_API_KEY` | Backend-only Financial Modeling Prep API key. |
 | `SNAPTRADE_CLIENT_ID` | Backend-only SnapTrade commercial client ID. |
 | `SNAPTRADE_CONSUMER_KEY` | Backend-only SnapTrade signing secret. |
+| `BROKERAGE_CREDENTIAL_ENCRYPTION_KEY` | Fernet key used to encrypt per-user brokerage secrets at rest; required in production. |
 
 Production mode enables secure cookies, HTTPS redirection, HSTS, MIME sniffing protection, and frame denial. Deploy behind HTTPS and set the correct proxy/security configuration for the hosting environment.
 
@@ -204,7 +205,7 @@ accounts = brokerage.list_accounts(registered)
 positions = brokerage.list_positions(registered, accounts[0].provider_account_id)
 ```
 
-SnapTrade recommends an immutable identifier rather than an email for its `userId`. The application User UUID is suitable. User secrets must be encrypted at rest when the persistent connection model is introduced in the portfolio-integration stage; they must never be logged, returned to a browser after initial setup, or placed in source control.
+SnapTrade recommends an immutable identifier rather than an email for its `userId`. The application User UUID is used. User secrets are encrypted at rest and are never logged or returned to the browser.
 
 Run a read-only provider status check after configuring partner credentials:
 
@@ -268,7 +269,7 @@ All routes require an authenticated session:
 | `GET/PATCH/DELETE` | `/api/v1/asset-types/{id}/` | Read or manage a custom type. |
 | `GET/POST` | `/api/v1/portfolios/{id}/holdings/` | List or create manual holdings. |
 | `GET/PATCH/DELETE` | `/api/v1/portfolios/{id}/holdings/{holdingId}/` | Read or manage a manual holding. |
-| `GET` | `/api/v1/portfolios/{id}/overview/` | Current manual valuation rollups. |
+| `GET` | `/api/v1/portfolios/{id}/overview/` | Current valuation rollups. |
 
 Example manual holding request:
 
@@ -287,3 +288,28 @@ Example manual holding request:
 ```
 
 Omit `group_id` to place the holding in Ungrouped. Stage 3 endpoints never create market-linked or synced ownership; those flows must enter through the Stage 4 services so provider-controlled state cannot be corrupted by manual CRUD.
+
+## Stage 4 market and brokerage workflows
+
+Market-linked holdings store a canonical symbol, exchange, and small issuer identity fingerprint. Each valuation validates that fingerprint before accepting a quote. If identity changes, the asset enters `NEEDS_RELINK`; only the explicit relink endpoint can accept the new identity. Valuation preference is live/cached market quote, provider value, manual value, then unavailable.
+
+Overview totals include only values already denominated in the portfolio base currency. Until a dedicated FX source is introduced, other currencies remain visible on individual holdings and are counted as currency mismatches instead of being silently added to an invalid total.
+
+Brokerage access is gated by the `brokerage_sync` entitlement. A connection is imported into exactly one user-owned portfolio. Each provider account becomes a synced group and each position is reconciled by stable provider identifiers. Successful complete snapshots close missing positions instead of deleting them. Provider failures leave the last successful snapshot intact. Refresh is a separate asynchronous provider operation and never implies that reconciliation completed.
+
+| Method | Route | Responsibility |
+|---|---|---|
+| `GET` | `/api/v1/market/search/?q={query}` | Search provider-backed securities. |
+| `POST` | `/api/v1/portfolios/{id}/market-holdings/` | Create a canonical market-linked holding. |
+| `POST` | `/api/v1/portfolios/{id}/holdings/{holdingId}/relink/` | Explicitly accept a replacement market identity. |
+| `POST` | `/api/v1/brokerage/portal/` | Register the brokerage identity if needed and create a connection portal URL. |
+| `GET/POST` | `/api/v1/brokerage/connections/` | List saved connections or import provider connections into a portfolio. |
+| `POST` | `/api/v1/brokerage/connections/{id}/sync/` | Reconcile accounts and positions. |
+| `POST` | `/api/v1/brokerage/connections/{id}/refresh/` | Queue a provider refresh without claiming sync completion. |
+| `DELETE` | `/api/v1/brokerage/connections/{id}/` | Disconnect while preserving imported history. |
+
+Generate the production encryption secret once and place it in the deployment secret manager:
+
+```powershell
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```

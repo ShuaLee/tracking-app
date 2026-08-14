@@ -212,8 +212,13 @@ class SnapTradeBrokerageAdapter:
     def _account(item):
         balance = item.get("balance")
         if isinstance(balance, dict):
-            provider_value = as_decimal(balance.get("total"))
-            currency = str(balance.get("currency") or "").upper()
+            total = balance.get("total")
+            if isinstance(total, dict):
+                provider_value = as_decimal(total.get("amount"))
+                currency = str(total.get("currency") or "").upper()
+            else:
+                provider_value = as_decimal(total)
+                currency = str(balance.get("currency") or "").upper()
         else:
             provider_value = as_decimal(balance)
             currency = ""
@@ -275,4 +280,3 @@ class SnapTradeBrokerageAdapter:
                 "figi": plain_data(universal.get("figi_instrument")),
             },
         )
-

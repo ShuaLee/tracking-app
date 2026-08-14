@@ -1,5 +1,6 @@
 from copy import deepcopy
 
+from cryptography.fernet import Fernet
 from django.conf import settings
 from django.core.checks import Tags, run_checks
 from django.test import SimpleTestCase, override_settings
@@ -25,7 +26,10 @@ class IntegrationDeploymentCheckTests(SimpleTestCase):
         identifiers = {message.id for message in integration_messages()}
 
         self.assertTrue(
-            {"integrations.E001", "integrations.E003", "integrations.E004", "integrations.E005"}
+            {
+                "integrations.E001", "integrations.E003", "integrations.E004",
+                "integrations.E005", "integrations.E006",
+            }
             <= identifiers
         )
         self.assertIn("integrations.W001", identifiers)
@@ -41,6 +45,6 @@ class IntegrationDeploymentCheckTests(SimpleTestCase):
             REDIS_URL="rediss://redis.example/1",
             MARKET_DATA=market_data,
             BROKERAGE=brokerage,
+            BROKERAGE_CREDENTIAL_ENCRYPTION_KEY=Fernet.generate_key().decode("ascii"),
         ):
             self.assertEqual(integration_messages(), [])
-

@@ -2,6 +2,13 @@ from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_http_methods
 
+from integrations.exceptions import (
+    IntegrationError,
+    ProviderRateLimitError,
+    ResourceNotFoundError,
+)
+from integrations.market_data.service import MarketDataService
+
 from users.http import api_error, api_login_required, parse_json
 
 from .exceptions import PortfolioDomainError
@@ -28,6 +35,7 @@ from .services import (
     update_manual_holding,
     update_portfolio,
 )
+from .market import create_market_holding, relink_market_holding
 
 
 def _json(request):
@@ -39,6 +47,19 @@ def _json(request):
 
 def _domain_error(exc):
     return api_error(str(exc), code=exc.code, fields=exc.fields)
+
+
+def _integration_error(exc):
+    if isinstance(exc, ProviderRateLimitError):
+        status = 429
+    elif isinstance(exc, ResourceNotFoundError):
+        status = 404
+    else:
+        status = 503
+    response = api_error(str(exc), code=exc.code, status=status)
+    if exc.retry_after:
+        response["Retry-After"] = str(exc.retry_after)
+    return response
 
 
 def _portfolio(user, portfolio_id):
@@ -335,3 +356,101 @@ def overview(request, portfolio_id):
         {"overview": overview_data(portfolio, portfolio_overview(portfolio))}
     )
 
+
+@require_GET
+@api_login_required
+def market_search(request):
+    query = request.GET.get("q", "")
+    if not query.strip():
+        return api_error(
+            "A search query is required.", fields={"q": ["This field is required."]}
+        )
+    try:
+        results = MarketDataService().search(query, limit=request.GET.get("limit", 10))
+    except (IntegrationError, ValueError) as exc:
+        if isinstance(exc, IntegrationError):
+            return _integration_error(exc)
+        return api_error(str(exc))
+    return JsonResponse({"results": [
+        {
+            "symbol": item.symbol,
+            "name": item.name,
+            "exchange": item.exchange,
+            "currency": item.currency,
+            "security_type": item.security_type,
+            "identity": item.identity,
+            "stale": item.stale,
+        }
+        for item in results
+    ]})
+
+
+@require_http_methods(["POST"])
+@api_login_required
+def market_holdings(request, portfolio_id):
+    portfolio = _portfolio(request.user, portfolio_id)
+    if portfolio is None:
+        return _not_found("Portfolio")
+    data, error = _json(request)
+    if error:
+        return error
+    if error := _unknown_fields(
+        data, {"symbol", "exchange", "group_id", "quantity", "average_cost", "cost_currency"}
+    ):
+        return error
+    group = None
+    if data.get("group_id"):
+        group = portfolio.groups.filter(pk=data["group_id"]).first()
+        if group is None:
+            return api_error(
+                "Holding data is invalid.",
+                fields={"group_id": ["Group was not found in this portfolio."]},
+            )
+    try:
+        holding = create_market_holding(
+            portfolio=portfolio,
+            symbol=data.get("symbol", ""),
+            exchange=data.get("exchange", ""),
+            group=group,
+            quantity=data.get("quantity", 1),
+            average_cost=data.get("average_cost"),
+            cost_currency=data.get("cost_currency", ""),
+        )
+    except PortfolioDomainError as exc:
+        return _domain_error(exc)
+    except (IntegrationError, ValueError) as exc:
+        if isinstance(exc, IntegrationError):
+            return _integration_error(exc)
+        return api_error(str(exc))
+    return JsonResponse({"holding": holding_data(holding)}, status=201)
+
+
+@require_http_methods(["POST"])
+@api_login_required
+def relink_holding(request, portfolio_id, holding_id):
+    portfolio = _portfolio(request.user, portfolio_id)
+    if portfolio is None:
+        return _not_found("Portfolio")
+    holding = Holding.objects.filter(
+        group__portfolio=portfolio, pk=holding_id
+    ).select_related("asset", "group", "asset__asset_type").first()
+    if holding is None:
+        return _not_found("Holding")
+    data, error = _json(request)
+    if error:
+        return error
+    if error := _unknown_fields(data, {"symbol", "exchange"}):
+        return error
+    try:
+        holding = relink_market_holding(
+            holding=holding,
+            symbol=data.get("symbol", ""),
+            exchange=data.get("exchange", ""),
+        )
+    except PortfolioDomainError as exc:
+        return _domain_error(exc)
+    except (IntegrationError, ValueError) as exc:
+        if isinstance(exc, IntegrationError):
+            return _integration_error(exc)
+        return api_error(str(exc))
+    return JsonResponse({"holding": holding_data(holding)})

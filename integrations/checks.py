@@ -50,6 +50,14 @@ def integration_deployment_checks(app_configs, **kwargs):
                 id="integrations.E005",
             )
         )
+    if not getattr(settings, "BROKERAGE_CREDENTIAL_ENCRYPTION_KEY", ""):
+        messages.append(
+            Error(
+                "BROKERAGE_CREDENTIAL_ENCRYPTION_KEY is required in production.",
+                hint="Generate a Fernet key and store it in the deployment secret manager.",
+                id="integrations.E006",
+            )
+        )
 
     ttls = market_data.get("TTLS", {})
     for fresh, stale in (
@@ -68,4 +76,3 @@ def integration_deployment_checks(app_configs, **kwargs):
             )
             break
     return messages
-

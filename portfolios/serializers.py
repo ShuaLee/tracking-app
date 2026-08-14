@@ -48,18 +48,25 @@ def asset_data(asset):
         "status": asset.status,
         "metadata": asset.metadata,
         "market_linked": asset.market_linked,
+        "market_data_status": asset.market_data_status,
+        "market_symbol": asset.market_symbol or None,
+        "market_exchange": asset.market_exchange or None,
+        "market_identity": asset.market_identity,
     }
 
 
-def holding_data(holding):
+def holding_data(holding, *, valuation=None):
+    if valuation is None:
+        from .valuation import value_holding
+        valuation = value_holding(holding)
     cost_basis = (
         holding.quantity * holding.average_cost
         if holding.average_cost is not None
         else None
     )
     gain_loss = (
-        holding.manual_value - cost_basis
-        if holding.manual_value is not None and cost_basis is not None
+        valuation.value - cost_basis
+        if valuation.value is not None and cost_basis is not None
         else None
     )
     return {
@@ -73,8 +80,10 @@ def holding_data(holding):
         "average_cost": decimal_string(holding.average_cost),
         "cost_currency": holding.cost_currency or None,
         "cost_basis": decimal_string(cost_basis),
-        "current_value": decimal_string(holding.manual_value),
-        "valuation_source": "MANUAL" if holding.manual_value is not None else "UNAVAILABLE",
+        "current_value": decimal_string(valuation.value),
+        "valuation_currency": valuation.currency or None,
+        "valuation_source": valuation.source,
+        "valuation_stale": valuation.stale,
         "gain_loss": decimal_string(gain_loss),
         "created_at": holding.created_at.isoformat(),
         "updated_at": holding.updated_at.isoformat(),
@@ -88,6 +97,7 @@ def overview_data(portfolio, overview):
         "valuation_currency": portfolio.base_currency,
         "holding_count": overview["holding_count"],
         "unknown_value_count": overview["unknown_value_count"],
+        "currency_mismatch_count": overview["currency_mismatch_count"],
         "by_group": [
             {
                 **group_data(group),
@@ -105,4 +115,3 @@ def overview_data(portfolio, overview):
             for asset_type in overview["asset_types"]
         ],
     }
-

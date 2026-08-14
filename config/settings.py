@@ -148,6 +148,9 @@ BROKERAGE = {
     "SNAPTRADE_CLIENT_ID": os.environ.get("SNAPTRADE_CLIENT_ID", ""),
     "SNAPTRADE_CONSUMER_KEY": os.environ.get("SNAPTRADE_CONSUMER_KEY", ""),
 }
+BROKERAGE_CREDENTIAL_ENCRYPTION_KEY = os.environ.get(
+    "BROKERAGE_CREDENTIAL_ENCRYPTION_KEY", ""
+)
 
 
 # Password validation

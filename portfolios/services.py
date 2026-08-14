@@ -1,9 +1,7 @@
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError, models, transaction
-from django.db.models import Count, DecimalField, Sum
-from django.db.models.functions import Coalesce
+from django.db import IntegrityError, transaction
 
 from subscriptions.entitlements import limit
 
@@ -220,6 +218,12 @@ def create_manual_holding(
 def update_manual_holding(*, holding, **changes):
     if holding.source != Holding.Source.MANUAL:
         raise ProtectedOperationError("Provider-controlled holdings cannot be changed manually.")
+    if holding.asset.market_linked and any(
+        field in changes for field in ("name", "native_currency", "asset_type")
+    ):
+        raise ProtectedOperationError(
+            "Market-linked identity must be changed through the relink operation."
+        )
     if "group" in changes:
         group = changes["group"]
         if group.portfolio_id != holding.asset.portfolio_id:
@@ -275,40 +279,52 @@ def delete_manual_holding(*, holding):
 
 
 def portfolio_overview(portfolio):
-    active = Holding.objects.filter(
+    active = list(Holding.objects.filter(
         group__portfolio=portfolio,
         status=Holding.Status.ACTIVE,
-    )
-    known = active.filter(manual_value__isnull=False)
-    total = known.aggregate(value=Sum("manual_value"))["value"] or Decimal("0")
-    group_rows = (
-        portfolio.groups.annotate(
-            value=Coalesce(
-                Sum("holdings__manual_value", filter=models.Q(holdings__status=Holding.Status.ACTIVE)),
-                Decimal("0"),
-                output_field=DecimalField(max_digits=24, decimal_places=2),
+    ).select_related("group", "asset", "asset__asset_type"))
+    from .valuation import value_holding
+    valuations = {holding.pk: value_holding(holding) for holding in active}
+    known = [
+        value for value in valuations.values()
+        if value.value is not None and value.currency == portfolio.base_currency
+    ]
+    currency_mismatches = [
+        value for value in valuations.values()
+        if value.value is not None and value.currency != portfolio.base_currency
+    ]
+    total = sum((value.value for value in known), Decimal("0")).normalize()
+    group_rows = []
+    for group in portfolio.groups.all():
+        items = [holding for holding in active if holding.group_id == group.pk]
+        group.value = sum(
+            (
+                valuations[item.pk].value for item in items
+                if valuations[item.pk].value is not None
+                and valuations[item.pk].currency == portfolio.base_currency
             ),
-            holding_count=Count("holdings", filter=models.Q(holdings__status=Holding.Status.ACTIVE)),
+            Decimal("0"),
         )
-        .order_by("created_at")
-    )
-    type_rows = (
-        AssetType.objects.filter(assets__portfolio=portfolio)
-        .annotate(
-            value=Coalesce(
-                Sum("assets__holdings__manual_value", filter=models.Q(assets__holdings__status=Holding.Status.ACTIVE)),
-                Decimal("0"),
-                output_field=DecimalField(max_digits=24, decimal_places=2),
+        group.holding_count = len(items)
+        group_rows.append(group)
+    type_rows = []
+    for asset_type in AssetType.objects.filter(assets__portfolio=portfolio).distinct():
+        items = [holding for holding in active if holding.asset.asset_type_id == asset_type.pk]
+        asset_type.value = sum(
+            (
+                valuations[item.pk].value for item in items
+                if valuations[item.pk].value is not None
+                and valuations[item.pk].currency == portfolio.base_currency
             ),
-            holding_count=Count("assets__holdings", filter=models.Q(assets__holdings__status=Holding.Status.ACTIVE)),
+            Decimal("0"),
         )
-        .distinct()
-        .order_by("system_category", "name")
-    )
+        asset_type.holding_count = len(items)
+        type_rows.append(asset_type)
     return {
         "total_value": total,
-        "unknown_value_count": active.filter(manual_value__isnull=True).count(),
-        "holding_count": active.count(),
+        "unknown_value_count": len(active) - len(known),
+        "currency_mismatch_count": len(currency_mismatches),
+        "holding_count": len(active),
         "groups": group_rows,
         "asset_types": type_rows,
     }

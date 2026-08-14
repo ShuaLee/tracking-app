@@ -160,6 +160,12 @@ class Asset(models.Model):
         INACTIVE = "INACTIVE", "Inactive"
         ARCHIVED = "ARCHIVED", "Archived"
 
+    class MarketDataStatus(models.TextChoices):
+        UNLINKED = "UNLINKED", "Unlinked"
+        LINKED = "LINKED", "Linked"
+        NEEDS_RELINK = "NEEDS_RELINK", "Needs relink"
+        UNAVAILABLE = "UNAVAILABLE", "Unavailable"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     portfolio = models.ForeignKey(
         Portfolio,
@@ -179,6 +185,11 @@ class Asset(models.Model):
         max_length=10, choices=Status.choices, default=Status.ACTIVE
     )
     market_linked = models.BooleanField(default=False)
+    market_data_status = models.CharField(
+        max_length=16,
+        choices=MarketDataStatus.choices,
+        default=MarketDataStatus.UNLINKED,
+    )
     market_symbol = models.CharField(max_length=64, blank=True)
     market_exchange = models.CharField(max_length=64, blank=True)
     market_identity = models.JSONField(default=dict, blank=True)
@@ -199,7 +210,21 @@ class Asset(models.Model):
                     )
                 ),
                 name="manual_asset_has_no_market_fields",
-            )
+            ),
+            models.CheckConstraint(
+                condition=(
+                    (
+                        models.Q(market_linked=False)
+                        & models.Q(market_data_status="UNLINKED")
+                    )
+                    | (
+                        models.Q(market_linked=True)
+                        & ~models.Q(market_data_status="UNLINKED")
+                        & ~models.Q(market_symbol="")
+                    )
+                ),
+                name="market_link_status_consistent",
+            ),
         ]
 
     def clean(self):
@@ -217,6 +242,15 @@ class Asset(models.Model):
             self.market_symbol or self.market_exchange or self.market_identity
         ):
             errors["market_linked"] = "Unlinked assets cannot contain market identity fields."
+        if self.market_linked and (
+            not self.market_symbol
+            or self.market_data_status == self.MarketDataStatus.UNLINKED
+        ):
+            errors["market_linked"] = (
+                "Linked assets require a symbol and linked market-data status."
+            )
+        if not self.market_linked and self.market_data_status != self.MarketDataStatus.UNLINKED:
+            errors["market_data_status"] = "Unlinked assets must use UNLINKED status."
         if errors:
             raise ValidationError(errors)
 
@@ -291,6 +325,23 @@ class Holding(models.Model):
             models.CheckConstraint(
                 condition=(models.Q(manual_value__isnull=True) | models.Q(manual_value__gte=0)),
                 name="holding_manual_value_nonnegative",
+            ),
+            models.UniqueConstraint(
+                fields=("group", "provider_position_id"),
+                condition=(
+                    models.Q(source="SYNCED")
+                    & ~models.Q(provider_position_id="")
+                ),
+                name="unique_synced_provider_position_in_group",
+            ),
+            models.UniqueConstraint(
+                fields=("group", "provider_security_id"),
+                condition=(
+                    models.Q(source="SYNCED")
+                    & models.Q(provider_position_id="")
+                    & ~models.Q(provider_security_id="")
+                ),
+                name="unique_synced_provider_security_without_position",
             ),
         ]
 

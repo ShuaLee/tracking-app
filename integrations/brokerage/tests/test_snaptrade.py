@@ -154,6 +154,21 @@ class SnapTradeAdapterTests(SimpleTestCase):
         self.assertEqual(account.currency, "CAD")
         self.assertNotIn("meta", account.metadata)
 
+    def test_current_nested_account_balance_is_normalized(self):
+        self.client.account_information.list_user_accounts.return_value = response(
+            [{
+                "id": "account-1",
+                "brokerage_authorization": "connection-1",
+                "name": "TFSA",
+                "balance": {"total": {"amount": "12500.25", "currency": "CAD"}},
+            }]
+        )
+
+        account = self.adapter.list_accounts(self.credentials)[0]
+
+        self.assertEqual(account.provider_value, Decimal("12500.25"))
+        self.assertEqual(account.currency, "CAD")
+
     def test_current_position_payload_is_normalized(self):
         self.client.account_information.get_all_account_positions.return_value = response(
             {

@@ -4,7 +4,7 @@ from django.test import TestCase, override_settings
 
 from portfolios.exceptions import EntitlementLimitError, PortfolioDomainError, ProtectedOperationError
 from portfolios.models import Asset, AssetType, Group, Holding, Portfolio
-from portfolios.services import (
+from portfolios.services.holdings import (
     create_custom_asset_type,
     create_manual_group,
     create_manual_holding,
@@ -173,4 +173,3 @@ class PortfolioServiceTests(TestCase):
         self.assertEqual(overview["total_value"], Decimal("90000"))
         self.assertEqual(overview["holding_count"], 2)
         self.assertEqual(overview["unknown_value_count"], 1)
-

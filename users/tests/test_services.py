@@ -42,7 +42,7 @@ class AccountServiceTests(TestCase):
 
     def test_create_account_rolls_back_if_portfolio_bootstrap_fails(self):
         with patch(
-            "portfolios.services.Group.objects.create",
+            "portfolios.services.holdings.Group.objects.create",
             side_effect=RuntimeError("group failure"),
         ):
             with self.assertRaisesMessage(RuntimeError, "group failure"):

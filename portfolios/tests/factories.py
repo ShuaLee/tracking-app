@@ -2,7 +2,7 @@ from subscriptions.models import Subscription
 from users.models import User
 
 from portfolios.models import AssetType
-from portfolios.services import create_portfolio
+from portfolios.services.holdings import create_portfolio
 
 
 PASSWORD = "A-strong-password-927!"
@@ -21,4 +21,3 @@ def portfolio(owner, name="My Portfolio", currency="USD"):
 
 def asset_type(name="Other"):
     return AssetType.objects.get(owner__isnull=True, name=name)
-

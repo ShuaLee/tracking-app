@@ -1,3 +1,6 @@
+"""Domain-specific exceptions translated by the portfolio API boundary."""
+
+
 class PortfolioDomainError(Exception):
     def __init__(self, message, *, code="invalid_request", fields=None):
         self.code = code
@@ -17,4 +20,3 @@ class EntitlementLimitError(PortfolioDomainError):
 class ProtectedOperationError(PortfolioDomainError):
     def __init__(self, message):
         super().__init__(message, code="protected_operation")
-

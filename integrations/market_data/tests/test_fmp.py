@@ -91,6 +91,7 @@ class FMPAdapterTests(SimpleTestCase):
                 "currency": "USD",
                 "sector": "Technology",
                 "industry": "Consumer Electronics",
+                "country": "US",
                 "description": "Description",
                 "website": "https://apple.com",
                 "isin": "US0378331005",
@@ -105,6 +106,7 @@ class FMPAdapterTests(SimpleTestCase):
         self.assertEqual(profile.name, "Apple Inc.")
         self.assertEqual(profile.security_type, "STOCK")
         self.assertEqual(profile.identity["isin"], "US0378331005")
+        self.assertEqual(profile.country_code, "US")
         self.assertTrue(profile.active)
 
     def test_dividends_normalize_and_sort_valid_events(self):
@@ -128,4 +130,3 @@ class FMPAdapterTests(SimpleTestCase):
         self.assertEqual(len(dividends), 2)
         self.assertEqual(dividends[0].ex_date, date(2025, 5, 12))
         self.assertEqual(dividends[0].amount, Decimal("0.26"))
-

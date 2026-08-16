@@ -11,6 +11,7 @@ class SecuritySearchResult:
     exchange: str = ""
     currency: str = ""
     security_type: str = ""
+    country_code: str = ""
     identity: dict[str, Any] = field(default_factory=dict)
     stale: bool = False
 
@@ -37,6 +38,7 @@ class SecurityProfile:
     security_type: str = ""
     sector: str = ""
     industry: str = ""
+    country_code: str = ""
     description: str = ""
     website: str = ""
     identity: dict[str, Any] = field(default_factory=dict)
@@ -63,4 +65,3 @@ class QuoteBatch:
     quotes: tuple[Quote, ...]
     unavailable_symbols: tuple[str, ...] = ()
     degraded: bool = False
-

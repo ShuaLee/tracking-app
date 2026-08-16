@@ -1,3 +1,5 @@
+"""HTTP endpoints for portfolios, groups, assets, and holdings."""
+
 from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_http_methods
@@ -11,8 +13,8 @@ from integrations.market_data.service import MarketDataService
 
 from users.http import api_error, api_login_required, parse_json
 
-from .exceptions import PortfolioDomainError
-from .models import AssetType, Group, Holding, Portfolio
+from ..exceptions import PortfolioDomainError
+from ..models import AssetType, Group, Holding, Portfolio
 from .serializers import (
     asset_type_data,
     group_data,
@@ -20,7 +22,7 @@ from .serializers import (
     overview_data,
     portfolio_data,
 )
-from .services import (
+from ..services.holdings import (
     create_custom_asset_type,
     create_manual_group,
     create_manual_holding,
@@ -35,7 +37,7 @@ from .services import (
     update_manual_holding,
     update_portfolio,
 )
-from .market import create_market_holding, relink_market_holding
+from ..services.market_data import create_market_holding, relink_market_holding
 
 
 def _json(request):
@@ -249,7 +251,8 @@ def holdings(request, portfolio_id):
     if error:
         return error
     allowed = {
-        "name", "asset_type_id", "group_id", "native_currency", "metadata",
+        "name", "asset_type_id", "group_id", "native_currency", "country_code",
+        "sector", "industry", "metadata",
         "quantity", "average_cost", "cost_currency", "manual_value",
     }
     if error := _unknown_fields(data, allowed):
@@ -279,6 +282,9 @@ def holdings(request, portfolio_id):
             group=group,
             name=data.get("name", ""),
             native_currency=data.get("native_currency", ""),
+            country_code=data.get("country_code", ""),
+            sector=data.get("sector", ""),
+            industry=data.get("industry", ""),
             metadata=data.get("metadata", {}),
             quantity=data.get("quantity", 1),
             average_cost=data.get("average_cost"),
@@ -313,7 +319,8 @@ def holding_detail(request, portfolio_id, holding_id):
         if error:
             return error
         allowed = {
-            "name", "asset_type_id", "group_id", "native_currency", "metadata",
+            "name", "asset_type_id", "group_id", "native_currency", "country_code",
+            "sector", "industry", "metadata",
             "quantity", "average_cost", "cost_currency", "manual_value",
             "asset_status", "holding_status",
         }
@@ -378,6 +385,7 @@ def market_search(request):
             "exchange": item.exchange,
             "currency": item.currency,
             "security_type": item.security_type,
+            "country_code": item.country_code,
             "identity": item.identity,
             "stale": item.stale,
         }

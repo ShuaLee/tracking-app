@@ -1,3 +1,5 @@
+"""Use cases and invariants for portfolios, groups, assets, and holdings."""
+
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
@@ -5,8 +7,8 @@ from django.db import IntegrityError, transaction
 
 from subscriptions.entitlements import limit
 
-from .exceptions import EntitlementLimitError, PortfolioDomainError, ProtectedOperationError
-from .models import Asset, AssetType, Group, Holding, Portfolio
+from ..exceptions import EntitlementLimitError, PortfolioDomainError, ProtectedOperationError
+from ..models import Asset, AssetType, Group, Holding, Portfolio
 
 
 def _validation_error(exc):
@@ -162,6 +164,9 @@ def create_manual_holding(
     name,
     group=None,
     native_currency="",
+    country_code="",
+    sector="",
+    industry="",
     metadata=None,
     quantity=1,
     average_cost=None,
@@ -196,6 +201,9 @@ def create_manual_holding(
         asset_type=asset_type,
         name=str(name).strip(),
         native_currency=str(native_currency).strip().upper(),
+        country_code=str(country_code).strip().upper(),
+        sector=str(sector).strip(),
+        industry=str(industry).strip(),
         metadata=metadata or {},
     )
     _validate(asset)
@@ -219,7 +227,10 @@ def update_manual_holding(*, holding, **changes):
     if holding.source != Holding.Source.MANUAL:
         raise ProtectedOperationError("Provider-controlled holdings cannot be changed manually.")
     if holding.asset.market_linked and any(
-        field in changes for field in ("name", "native_currency", "asset_type")
+        field in changes
+        for field in (
+            "name", "native_currency", "country_code", "sector", "industry", "asset_type"
+        )
     ):
         raise ProtectedOperationError(
             "Market-linked identity must be changed through the relink operation."
@@ -243,10 +254,12 @@ def update_manual_holding(*, holding, **changes):
     if "cost_currency" in changes:
         holding.cost_currency = str(changes["cost_currency"]).strip().upper()
     asset = holding.asset
-    for field in ("name", "native_currency", "metadata"):
+    for field in (
+        "name", "native_currency", "country_code", "sector", "industry", "metadata"
+    ):
         if field in changes:
             value = changes[field]
-            if field in ("name", "native_currency"):
+            if field in ("name", "native_currency", "country_code", "sector", "industry"):
                 value = str(value).strip()
             setattr(asset, field, value)
     if "asset_status" in changes:
@@ -282,9 +295,13 @@ def portfolio_overview(portfolio):
     active = list(Holding.objects.filter(
         group__portfolio=portfolio,
         status=Holding.Status.ACTIVE,
-    ).select_related("group", "asset", "asset__asset_type"))
+    ).select_related("group", "asset", "asset__asset_type").prefetch_related("income_rules"))
     from .valuation import value_holding
+    from ..analytics.income import projections_for_holding
     valuations = {holding.pk: value_holding(holding) for holding in active}
+    projections = {
+        holding.pk: projections_for_holding(holding) for holding in active
+    }
     known = [
         value for value in valuations.values()
         if value.value is not None and value.currency == portfolio.base_currency
@@ -294,6 +311,34 @@ def portfolio_overview(portfolio):
         if value.value is not None and value.currency != portfolio.base_currency
     ]
     total = sum((value.value for value in known), Decimal("0")).normalize()
+    annual_income = sum(
+        (
+            projection.annual_amount
+            for items in projections.values()
+            for projection in items
+            if projection.currency == portfolio.base_currency
+        ),
+        Decimal("0"),
+    )
+    income_currency_mismatch_count = sum(
+        1
+        for items in projections.values()
+        for projection in items
+        if projection.currency != portfolio.base_currency
+    )
+    cost_basis = sum(
+        (
+            holding.quantity * holding.average_cost
+            for holding in active
+            if holding.average_cost is not None
+            and (
+                holding.cost_currency
+                or holding.asset.native_currency
+                or portfolio.base_currency
+            ) == portfolio.base_currency
+        ),
+        Decimal("0"),
+    )
     group_rows = []
     for group in portfolio.groups.all():
         items = [holding for holding in active if holding.group_id == group.pk]
@@ -325,6 +370,12 @@ def portfolio_overview(portfolio):
         "unknown_value_count": len(active) - len(known),
         "currency_mismatch_count": len(currency_mismatches),
         "holding_count": len(active),
+        "expected_annual_income": annual_income,
+        "income_currency_mismatch_count": income_currency_mismatch_count,
+        "current_yield": annual_income / total * Decimal("100") if total else None,
+        "yield_on_cost": (
+            annual_income / cost_basis * Decimal("100") if cost_basis else None
+        ),
         "groups": group_rows,
         "asset_types": type_rows,
     }

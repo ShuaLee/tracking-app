@@ -1,8 +1,10 @@
 # Tracking App — Application Foundations
 
-This repository contains the complete Stage 1 identity/account domain, Stage 2 external-data foundation, Stage 3 manual portfolio core, and Stage 4 market-linked and brokerage-synced portfolio workflows. It provides secure identity, centralized entitlements, provider-neutral integrations, and permanent ownership models for arbitrary assets.
+This repository contains the complete Stage 1 identity/account domain, Stage 2 external-data foundation, Stage 3 manual portfolio core, Stage 4 market-linked and brokerage-synced workflows, and Stage 5 configurable analytics Views. It provides secure identity, centralized entitlements, provider-neutral integrations, permanent ownership models, optional income and themes, and user-defined analytical surfaces.
 
 Manual ownership remains usable when every external provider and cache is offline. Stage 4 enriches that permanent data without making a provider the system of record.
+
+See [Codebase Structure](docs/codebase_structure.md) for the package map and dependency rules. Each major application and each `portfolios` subpackage also has a local README describing its responsibilities.
 
 ## Local setup
 
@@ -313,3 +315,29 @@ Generate the production encryption secret once and place it in the deployment se
 ```powershell
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
+
+## Stage 5 configurable Views
+
+Stage 5 does not create permanent Theme or Cash Flow pages. A user explicitly creates and names a View, starts blank, copies an optional starter, or copies one of their existing Views. Each View can include every portfolio holding or an explicit reusable selection of holdings. Copying a View creates independent configuration that can then be renamed and changed.
+
+Blocks support `HOLDINGS`, `INCOME`, `THEMES`, and `GROUPS` data sources with `TABLE`, `LIST`, and `SUMMARY` presentations. Holdings expose theme, country, sector, industry, symbol, yield, income, value, and gain dimensions. Configuration is a validated declarative query containing approved fields, filters, up to three grouping dimensions, aggregations, sorting, and a result limit. Arbitrary SQL and formulas are rejected. The schema endpoint lets a client build the editor without duplicating the server's allowlist.
+
+Expected income consists of optional manual recurring rules plus a trailing-twelve-month dividend projection for safely linked public securities. It is distinct from actual received cash, which is intentionally not persisted yet. Income, valuation, yield, theme allocation, target gaps, and group totals are calculated from underlying holdings when a View is rendered.
+
+| Method | Route | Responsibility |
+|---|---|---|
+| `GET` | `/api/v1/view-schema/` | Discover supported data sources, fields, operations, and presentations. |
+| `GET` | `/api/v1/view-templates/` | List optional starter configurations. |
+| `GET/POST` | `/api/v1/portfolios/{id}/views/` | List or create named Views, blank, from a starter, or copied from another View. |
+| `GET/PATCH/DELETE` | `/api/v1/portfolios/{id}/views/{viewId}/` | Manage a View without touching financial data. |
+| `GET/POST` | `/api/v1/portfolios/{id}/views/{viewId}/blocks/` | List or add configured blocks. |
+| `GET/PATCH/DELETE` | `/api/v1/portfolios/{id}/views/{viewId}/blocks/{blockId}/` | Configure, move, or remove a block. |
+| `GET` | `/api/v1/portfolios/{id}/views/{viewId}/render/` | Resolve the complete View from current portfolio data. |
+| `GET/POST` | `/api/v1/portfolios/{id}/themes/` | List or create optional themes/subthemes. |
+| `POST` | `/api/v1/portfolios/{id}/themes/{themeId}/holdings/` | Assign or move a holding to one theme. |
+| `DELETE` | `/api/v1/portfolios/{id}/holdings/{holdingId}/theme/` | Return a holding to the unassigned state. |
+| `PATCH` | `/api/v1/portfolios/{id}/holdings/{holdingId}/classification/` | Set country, sector, and industry used by custom breakdowns. |
+| `GET/POST` | `/api/v1/portfolios/{id}/income-rules/` | Manage optional recurring expected-income inputs. |
+| `GET` | `/api/v1/portfolios/{id}/income-projections/` | Read manual and market-derived expected income. |
+
+The complete model, query contract, and lifecycle rules are documented in `docs/configurable_portfolio_views.md`.

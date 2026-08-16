@@ -44,7 +44,7 @@ def create_account(*, email, password, name=""):
     user.profile.save(update_fields=["name", "updated_at"])
     # Portfolio bootstrap is added here now that the Stage 3 domain exists.
     # The local import keeps the identity models independent of portfolio models.
-    from portfolios.services import create_portfolio
+    from portfolios.services.holdings import create_portfolio
 
     create_portfolio(owner=user, name="My Portfolio", base_currency="USD")
     return user

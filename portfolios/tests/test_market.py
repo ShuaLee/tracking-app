@@ -4,10 +4,10 @@ from unittest.mock import Mock
 from django.test import TestCase
 
 from integrations.market_data.contracts import Quote, SecurityProfile
-from portfolios.market import create_market_holding, relink_market_holding
+from portfolios.services.market_data import create_market_holding, relink_market_holding
 from portfolios.models import Asset, Holding
 from portfolios.tests.factories import portfolio, user
-from portfolios.valuation import value_holding
+from portfolios.services.valuation import value_holding
 
 
 class MarketLinkedHoldingTests(TestCase):
@@ -21,6 +21,9 @@ class MarketLinkedHoldingTests(TestCase):
             exchange="NASDAQ",
             currency="USD",
             security_type="stock",
+            sector="Technology",
+            industry="Consumer Electronics",
+            country_code="US",
             identity={"isin": "US0378331005"},
         )
         self.service.get_profile.return_value = self.profile
@@ -42,6 +45,8 @@ class MarketLinkedHoldingTests(TestCase):
         self.assertEqual(holding.asset.name, "Apple Inc.")
         self.assertEqual(holding.asset.market_data_status, Asset.MarketDataStatus.LINKED)
         self.assertEqual(holding.asset.market_identity["isin"], "US0378331005")
+        self.assertEqual(holding.asset.country_code, "US")
+        self.assertEqual(holding.asset.sector, "Technology")
         self.assertEqual(valuation.value, Decimal("421.00"))
         self.assertEqual(valuation.source, "MARKET")
 

@@ -1,11 +1,13 @@
+"""Market-data enrichment and relinking for portfolio-scoped assets."""
+
 from django.db import transaction
 
 from integrations.market_data.service import MarketDataService
 from subscriptions.entitlements import limit
 
-from .exceptions import EntitlementLimitError, PortfolioDomainError, ProtectedOperationError
-from .models import Asset, AssetType, Group, Holding
-from .services import _decimal, _validate
+from ..exceptions import EntitlementLimitError, PortfolioDomainError, ProtectedOperationError
+from ..models import Asset, AssetType, Group, Holding
+from .holdings import _decimal, _validate
 
 
 def identity_snapshot(profile):
@@ -73,6 +75,9 @@ def create_market_holding(
         asset_type=_type_for(profile),
         name=profile.name,
         native_currency=profile.currency,
+        country_code=profile.country_code,
+        sector=profile.sector,
+        industry=profile.industry,
         market_linked=True,
         market_data_status=Asset.MarketDataStatus.LINKED,
         market_symbol=profile.symbol,
@@ -104,6 +109,9 @@ def relink_market_holding(*, holding, symbol, exchange="", service=None):
     asset.name = profile.name
     asset.asset_type = _type_for(profile)
     asset.native_currency = profile.currency
+    asset.country_code = profile.country_code
+    asset.sector = profile.sector
+    asset.industry = profile.industry
     asset.market_linked = True
     asset.market_data_status = Asset.MarketDataStatus.LINKED
     asset.market_symbol = profile.symbol

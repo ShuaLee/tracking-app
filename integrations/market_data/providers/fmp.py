@@ -36,6 +36,7 @@ class FMPMarketDataAdapter:
                     exchange=str(item.get("exchange") or item.get("exchangeShortName") or ""),
                     currency=str(item.get("currency") or "").upper(),
                     security_type=str(item.get("type") or ""),
+                    country_code=self._country_code(item),
                     identity=self._identity(item),
                 )
             )
@@ -89,6 +90,7 @@ class FMPMarketDataAdapter:
             security_type=security_type,
             sector=str(item.get("sector") or ""),
             industry=str(item.get("industry") or ""),
+            country_code=self._country_code(item),
             description=str(item.get("description") or ""),
             website=str(item.get("website") or ""),
             identity=self._identity(item),
@@ -151,3 +153,8 @@ class FMPMarketDataAdapter:
             for key in ("isin", "cusip", "cik")
             if item.get(key) not in (None, "")
         }
+
+    @staticmethod
+    def _country_code(item):
+        value = str(item.get("country") or "").strip().upper()
+        return value if len(value) == 2 and value.isalpha() else ""

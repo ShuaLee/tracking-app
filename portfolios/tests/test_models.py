@@ -5,7 +5,7 @@ from django.db import IntegrityError, transaction
 from django.test import TestCase
 
 from portfolios.models import Asset, AssetType, Group, Holding
-from portfolios.services import create_manual_holding, create_portfolio
+from portfolios.services.holdings import create_manual_holding, create_portfolio
 
 from .factories import asset_type, user
 

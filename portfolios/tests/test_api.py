@@ -4,7 +4,11 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from portfolios.models import Asset, AssetType, Group, Holding, Portfolio
-from portfolios.services import create_manual_group, create_manual_holding, create_portfolio
+from portfolios.services.holdings import (
+    create_manual_group,
+    create_manual_holding,
+    create_portfolio,
+)
 
 from .factories import PASSWORD, asset_type, user
 

@@ -1,3 +1,5 @@
+"""JSON representations for portfolio ownership resources."""
+
 from decimal import Decimal
 
 
@@ -45,6 +47,9 @@ def asset_data(asset):
         "name": asset.name,
         "asset_type": asset_type_data(asset.asset_type),
         "native_currency": asset.native_currency or None,
+        "country_code": asset.country_code or None,
+        "sector": asset.sector or None,
+        "industry": asset.industry or None,
         "status": asset.status,
         "metadata": asset.metadata,
         "market_linked": asset.market_linked,
@@ -57,7 +62,7 @@ def asset_data(asset):
 
 def holding_data(holding, *, valuation=None):
     if valuation is None:
-        from .valuation import value_holding
+        from ..services.valuation import value_holding
         valuation = value_holding(holding)
     cost_basis = (
         holding.quantity * holding.average_cost
@@ -98,6 +103,10 @@ def overview_data(portfolio, overview):
         "holding_count": overview["holding_count"],
         "unknown_value_count": overview["unknown_value_count"],
         "currency_mismatch_count": overview["currency_mismatch_count"],
+        "expected_annual_income": decimal_string(overview["expected_annual_income"]),
+        "income_currency_mismatch_count": overview["income_currency_mismatch_count"],
+        "current_yield": decimal_string(overview["current_yield"]),
+        "yield_on_cost": decimal_string(overview["yield_on_cost"]),
         "by_group": [
             {
                 **group_data(group),
